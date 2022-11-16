@@ -5,12 +5,11 @@ import (
 	"fmt"
 	"github.com/e-XpertSolutions/f5-rest-client/f5"
 	"github.com/e-XpertSolutions/f5-rest-client/f5/ltm"
+	"github.com/rs/xid"
 	"log"
 	"math/rand"
 	"time"
 )
-
-const letterBytes = "abcdefghijklmnopqrstuvwxyz0123456789"
 
 var (
 	WorkerNums      int
@@ -19,19 +18,11 @@ var (
 	Password        string
 	Username        string
 	Timeout         time.Duration
-	Memberip        string
+	MemberIP        string
 	VirtualServerIP string
+	File            string
+	Partition       string
 )
-
-func GetRandomString(n int) string {
-	bytes := []byte(letterBytes)
-	result := []byte{}
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	for i := 0; i < n; i++ {
-		result = append(result, bytes[r.Intn(len(bytes))])
-	}
-	return string(result)
-}
 
 type VirtualServer struct {
 	Virtual_Name      string
@@ -50,13 +41,16 @@ type VirtualServer struct {
 
 func init() {
 	flag.IntVar(&WorkerNums, "w", 10, "The Number of threads to start worker work")
-	flag.IntVar(&TaskNums, "n", 12, "The total of task numbers")
+	flag.IntVar(&TaskNums, "n", 10, "The total of task numbers")
 	flag.StringVar(&Host, "a", "127.0.0.1", "the remote of host ip")
 	flag.StringVar(&Username, "u", "admin", "the username of login host")
 	flag.StringVar(&Password, "p", "admin", "the password of login host")
 	flag.DurationVar(&Timeout, "t", 60*time.Second, "Set the timeout period for connecting to the host")
-	flag.StringVar(&Memberip, "m", "", "specify the ip addess of member")
-	//flag.StringVar(&virtualServerIP, "vs", "", "the specfiy  virtual server of ip addess")
+	flag.StringVar(&MemberIP, "m", "", "Specify the ip addess of member, If you don't specify an IP address, an IP address of 10.0.0.0/8 will be generated randomly.")
+	flag.StringVar(&File, "f", "", "Specify the file location of the output results")
+	flag.StringVar(&VirtualServerIP, "vs", "", "the specfiy  virtual server of ip addess")
+	//unknown finished
+	flag.StringVar(&Partition, "P", "Common", "the specfiy  the location of partition")
 }
 
 func getMBIPAddr() string {
@@ -89,14 +83,18 @@ func (vs *VirtualServer) Create(client *f5.Client) (err error) {
 	var members []string
 	var poolName string
 
+	rand.Seed(time.Now().UnixNano())
 	port := rand.Intn(50000)
 
-	if Memberip == "" {
+	if MemberIP == "" {
+		// random ip address
 		memberIPAddr := getMBIPAddr()
 		ip := fmt.Sprintf(memberIPAddr+":%d", port)
 		members = append(members, ip)
 	} else {
-		ip := fmt.Sprintf(Memberip+":%d", port)
+		//Add IP manually
+		ips := ParseIP(MemberIP)
+		ip := fmt.Sprintf(ips+":%d", port)
 		members = append(members, ip)
 	}
 
@@ -107,8 +105,8 @@ func (vs *VirtualServer) Create(client *f5.Client) (err error) {
 
 	ltmclient := ltm.New(tx)
 
-	str := GetRandomString(8)
-	poolName = fmt.Sprintf("Pool_Name_%s", str)
+	uid := xid.New()
+	poolName = fmt.Sprintf("Pool_Name_%s", uid)
 	pool := ltm.Pool{
 		Name:              poolName,
 		Monitor:           vs.Pool_Monitor,
@@ -120,12 +118,24 @@ func (vs *VirtualServer) Create(client *f5.Client) (err error) {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("pool name %s create success.\n", poolName)
+	if File == "" {
+		fmt.Printf("pool name %s create success.\n", poolName)
+	} else {
+		poolResult := fmt.Sprintf("pool name %s create success.\n", poolName)
+		WriteFile(poolResult, File)
+	}
 
-	vsName := fmt.Sprintf("Virtual_Name_%s", str)
+	vsName := fmt.Sprintf("Virtual_Name_%s", uid)
 
-	VirtualServerIP = getVSIPAddr()
-	vsIP := fmt.Sprintf(VirtualServerIP+":%d", port)
+	var vsIP string
+	if VirtualServerIP == "" {
+		VirtualServerIP = getVSIPAddr()
+		vsIP = fmt.Sprintf(VirtualServerIP+":%d", port)
+	} else {
+		//Add IP manually
+		ips := ParseIP(VirtualServerIP)
+		vsIP = fmt.Sprintf(ips+":%d", port)
+	}
 
 	vss := ltm.VirtualServer{
 		Name:                     vsName,
@@ -145,101 +155,30 @@ func (vs *VirtualServer) Create(client *f5.Client) (err error) {
 	if err = tx.Commit(); err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("virtualserver name %s create success.\n", vsName)
+
+	if File == "" {
+		fmt.Printf("virtualserver name %s create success.\n", vsName)
+	} else {
+		vsResult := fmt.Sprintf("virtualserver name %s create success.\n", vsName)
+		WriteFile(vsResult, File)
+	}
+
 	return nil
 }
 
-//Job interface
-type Job interface {
-	Create(client *f5.Client) (err error)
-}
-
-// The job processor, where the real business logic is handled, is responsible for receiving and processing tasks,
-// and it needs to tell the scheduler if it is ready to receive more tasks.
-type worker struct {
-	// Multiple workers share a worker queue WorkerQueue, which is used to register their own work channel (chan Job) to WorkerQueue
-	// when the worker is idle, so that the worker can receive task requests
-	workerQueue chan chan Job
-	// jobQueue is an unbuffered job channel that receives Job
-	jobQueue chan Job
-	quit     chan bool
-}
-
-// Initialize a worker thread
-func NewWorkers(workPool chan chan Job) *worker {
-	return &worker{
-		workerQueue: workPool,
-		jobQueue:    make(chan Job),
-		quit:        make(chan bool),
+func CreatePartition(client *f5.Client) (err error) {
+	tx, err := client.Begin()
+	if err != nil {
+		log.Fatalf("client open transaction: %s", err)
 	}
-}
 
-// Define a start method for the thread to indicate that it is listening for a task to begin processing
-func (w *worker) Start(client *f5.Client, ch chan struct{}) {
-	go func() {
-		for {
-			w.workerQueue <- w.jobQueue //Register the worker channel to the thread pool
-			select {
-			case task := <-w.jobQueue:
-				if err := task.Create(client); err != nil {
-					log.Fatalf("create configure failed :%s", err)
-				}
-				ch <- struct{}{} // The goroutine ends, then send to signals
-			case <-w.quit:
-				return
-			}
-		}
-	}()
-}
+	cmd := fmt.Sprintf("tmsh create auth partition " + Partition)
+	//fmt.Println(cmd)
+	tx.Exec(cmd)
+	//fmt.Println(output)
 
-// The thread stops working
-func (w *worker) Stop() {
-	go func() {
-		w.quit <- true
-	}()
-}
-
-//The task distributor can distribute the tasks in the task queue to the threads in the thread pool one by one for processing
-type Dispatcher struct {
-	WorkerQueue chan chan Job
-	MaxNum      int
-	JobQueue    chan Job
-}
-
-// Instantiate a task dispatcher
-func NewDispatcher(maxWorkerNum int) *Dispatcher {
-	return &Dispatcher{
-		WorkerQueue: make(chan chan Job, maxWorkerNum),
-		MaxNum:      maxWorkerNum,
-		JobQueue:    make(chan Job),
+	if err = tx.Commit(); err != nil {
+		log.Fatalf("client commits transaction: %s", err)
 	}
-}
-
-// Assign Tasks
-func (d *Dispatcher) Dispatch() {
-	for {
-		select {
-		// Remove a task from the task queue
-		case jobObj := <-d.JobQueue:
-			go func(job Job) {
-				// Take a thread out of the thread pool
-				workChan := <-d.WorkerQueue
-				// A task from the task queue is processed by the worker thread
-				workChan <- job
-			}(jobObj)
-		}
-
-	}
-}
-
-// Start Task allocator starts running and distributing tasks
-func (d *Dispatcher) Run(client *f5.Client, ch chan struct{}) {
-	//Creating a new worker Thread
-	for i := 0; i < d.MaxNum; i++ {
-		workerObj := NewWorkers(d.WorkerQueue)
-		//Start the thread
-		workerObj.Start(client, ch)
-	}
-	// Distribute Tasks
-	go d.Dispatch()
+	return nil
 }

@@ -9,6 +9,7 @@ func main() {
 	flag.Parse()
 	ch := make(chan struct{})
 	client, _ := pkg.NewF5Client()
+	pkg.CreatePartition(client)
 	// Initializes the task dispatcher
 	dispatcher := pkg.NewDispatcher(pkg.WorkerNums)
 	dispatcher.Run(client, ch)
