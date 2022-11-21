@@ -3,23 +3,29 @@ f5-bigipst is a stress testing tool that creates random configuration policies t
 
 ## Basic Usage
 ```cgo
-[root@localhost ~]# go run main.go  -h
+[root@localhost ~]# ./f5-bigipst  -h
+  -P string
+        the specfiy  the location of partition (default "Common")
   -a string
         the remote of host ip (default "127.0.0.1")
+  -f string
+        Specify the file location of the output results
   -m string
-        specify the ip addess of member
+        Specify the ip addess of member, If you don't specify an IP address, an IP address of 10.0.0.0/8 will be generated randomly.
   -n int
-        The total of task numbers (default 12)
+        The total of task numbers (default 10)
   -p string
         the password of login host (default "admin")
   -t duration
         Set the timeout period for connecting to the host (default 1m0s)
   -u string
         the username of login host (default "admin")
+  -vs string
+        the specfiy  virtual server of ip addess, If you don't specify an IP address, an IP address of 192.0.0.0/8 will be generated randomly.
   -w int
         The Number of threads to start worker work (default 10)
 
-[root@localhost ~]# go run main.go  -a 192.168.5.134  -n 300
+[root@localhost ~]# ./f5-bigipst  -a 192.168.5.134  -n 300
 pool name Pool_Name_9hxy0s85 create success.
 pool name Pool_Name_qr0hku2c create success.
 pool name Pool_Name_8h7khz7a create success.

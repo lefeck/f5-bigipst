@@ -48,7 +48,7 @@ func init() {
 	flag.DurationVar(&Timeout, "t", 60*time.Second, "Set the timeout period for connecting to the host")
 	flag.StringVar(&MemberIP, "m", "", "Specify the ip addess of member, If you don't specify an IP address, an IP address of 10.0.0.0/8 will be generated randomly.")
 	flag.StringVar(&File, "f", "", "Specify the file location of the output results")
-	flag.StringVar(&VirtualServerIP, "vs", "", "the specfiy  virtual server of ip addess")
+	flag.StringVar(&VirtualServerIP, "vs", "", "the specfiy  virtual server of ip addess, If you don't specify an IP address, an IP address of 192.0.0.0/8 will be generated randomly.")
 	//unknown finished
 	flag.StringVar(&Partition, "P", "Common", "the specfiy  the location of partition")
 }
@@ -87,7 +87,7 @@ func (vs *VirtualServer) Create(client *f5.Client) (err error) {
 	port := rand.Intn(50000)
 
 	if MemberIP == "" {
-		// random ip address
+		// the ip address will be generated randomly.
 		memberIPAddr := getMBIPAddr()
 		ip := fmt.Sprintf(memberIPAddr+":%d", port)
 		members = append(members, ip)
@@ -129,6 +129,7 @@ func (vs *VirtualServer) Create(client *f5.Client) (err error) {
 
 	var vsIP string
 	if VirtualServerIP == "" {
+		// the ip address will be generated randomly.
 		VirtualServerIP = getVSIPAddr()
 		vsIP = fmt.Sprintf(VirtualServerIP+":%d", port)
 	} else {
@@ -171,12 +172,8 @@ func CreatePartition(client *f5.Client) (err error) {
 	if err != nil {
 		log.Fatalf("client open transaction: %s", err)
 	}
-
 	cmd := fmt.Sprintf("tmsh create auth partition " + Partition)
-	//fmt.Println(cmd)
 	tx.Exec(cmd)
-	//fmt.Println(output)
-
 	if err = tx.Commit(); err != nil {
 		log.Fatalf("client commits transaction: %s", err)
 	}
