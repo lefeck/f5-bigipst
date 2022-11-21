@@ -7,8 +7,6 @@ import (
 )
 
 func ParseIP(ip string) string {
-	//var avaliableIPs string
-	ip = strings.TrimRight(ip, "/")
 	if strings.Contains(ip, "/") == true {
 		if strings.Contains(ip, "/32") == true {
 			nip := strings.Replace(ip, "/32", "", -1)

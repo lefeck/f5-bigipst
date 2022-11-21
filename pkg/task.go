@@ -67,8 +67,8 @@ func getVSIPAddr() string {
 
 //initiable f5 client
 func NewF5Client() (*f5.Client, error) {
-	hosts := fmt.Sprintf("https://" + Host)
-	client, err := f5.NewBasicClient(hosts, Username, Password)
+	host := fmt.Sprintf("https://" + Host)
+	client, err := f5.NewBasicClient(host, Username, Password)
 	//client, err := f5.NewBasicClient("https://192.168.5.134", "admin", "admin")
 	client.DisableCertCheck()
 
@@ -100,7 +100,7 @@ func (vs *VirtualServer) Create(client *f5.Client) (err error) {
 
 	tx, err := client.Begin()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("client open transaction: %s", err)
 	}
 
 	ltmclient := ltm.New(tx)
@@ -115,7 +115,7 @@ func (vs *VirtualServer) Create(client *f5.Client) (err error) {
 	}
 	//create pool
 	if err := ltmclient.Pool().Create(pool); err != nil {
-		log.Fatal(err)
+		log.Fatalf("create pool failed: %s", err)
 	}
 
 	if File == "" {
@@ -151,10 +151,10 @@ func (vs *VirtualServer) Create(client *f5.Client) (err error) {
 	}
 	// create virtual server
 	if err = ltmclient.Virtual().Create(vss); err != nil {
-		log.Fatal(err)
+		log.Fatalf("create virtualserver failed: %s", err)
 	}
 	if err = tx.Commit(); err != nil {
-		log.Fatal(err)
+		log.Fatalf("client open transaction: %s", err)
 	}
 
 	if File == "" {
