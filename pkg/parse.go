@@ -6,6 +6,7 @@ import (
 	"strings"
 )
 
+// ip address format: 192.168.10.1 or 192.168.10.1/32
 func ParseIP(ip string) string {
 	if strings.Contains(ip, "/") == true {
 		if strings.Contains(ip, "/32") == true {
@@ -14,12 +15,12 @@ func ParseIP(ip string) string {
 			if address == nil {
 				log.Fatal("illegal ip address")
 			}
-			return nip
+			return address.String()
 		}
 	}
 	address := net.ParseIP(ip)
 	if address == nil {
 		log.Fatal("illegal ip address")
 	}
-	return ip
+	return address.String()
 }
